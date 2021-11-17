@@ -1,43 +1,42 @@
-pragma solidity 0.4.20;
+pragma solidity ^0.5.0;
 
-contract Sentence {
+contract Tagging {
     // Sentence for tagging
     struct Sentence {
-        uint id;
+        bytes32 id;
         string content;
         uint numOfTags;
+        uint numOfAns;
         uint numRequired;
         mapping(address => bool) workerList;
         address requester;
         bool completed;
     }
 
-    struct VoteLog {
+    struct TagLog {
         mapping(address => uint) choice;
     }
 
     address public owner;
 
-    mapping(uint => Sentence) public SentenceList;
-    mapping(uint => uint[]) private ResultList;
-    mapping(uint => TagLog) private TagLogList;
+    mapping(bytes32 => Sentence) public SentenceList;
+    mapping(bytes32 => uint[]) private ResultList;
+    mapping(bytes32 => TagLog) private TagLogList;
 
     modifier onlyOwner() {
         require(msg.sender == owner);
         _;
     }
 
-    modifier checkVoteNum(uint _id) {
-        require(isExist(_id) == true);
-        // todo
-        require(SentenceList[_id].workerList.length < SentenceList[_id].numRequired);
+    modifier openforTag(bytes32 _id) {
+        require(isCompleted(_id) == false);
         _;
     }
 
     // add sentence event
-    event NewSentence(uint _id, string _content);
+    event NewSentence(bytes32 _id, string _content);
     // tag event
-    event AddTag(address indexed _from, uint _id, uint _choice, uint _numRequired);
+    event AddTag(address indexed _from, bytes32 _id, uint _choice);
 
     constructor() public {
         // The owner address is maintained.
@@ -45,8 +44,8 @@ contract Sentence {
     }
 
     // check existence
-    function isExist(uint _id) public {
-        if (SentenceList[_id].isExist == true) {
+    function isCompleted(bytes32 _id) public returns (bool){
+        if (SentenceList[_id].completed == true) {
             return true;
         } else {
             return false;
@@ -55,19 +54,19 @@ contract Sentence {
 
 
     // Create a new request sentence
-    function create(string memory _content, uint _numOfTags, uint _numRequired) public {
+    function create(string memory _content, uint _numOfTags, uint _numRequired) public returns (bool){
+        // hash function
+        bytes32 _id = keccak256(abi.encodePacked(_content));
 
-        uint _id = keccak256(abi.encodePacked(_content));
-        // check existence
-        require(isExist(_id) == false);
-
-        SentenceList[_id].isExist = true;
+        SentenceList[_id].completed = false;
         SentenceList[_id].id = _id;
         SentenceList[_id].content = _content;
         SentenceList[_id].numOfTags = _numOfTags;
+        SentenceList[_id].numOfAns = 0;
         SentenceList[_id].numRequired = _numRequired;
+        SentenceList[_id].completed = false;
 
-        ResultList[_id].length = _numberOfChoices;
+        ResultList[_id].length = _numOfTags;
 
         emit NewSentence(_id, _content);
 
@@ -76,7 +75,7 @@ contract Sentence {
 
     
     // add tag
-    function tag(uint _id, uint _choice) public {
+    function tag(bytes32 _id, uint _choice) public openforTag(_id) returns (bool){
         require(SentenceList[_id].workerList[msg.sender] == false);
 
 
@@ -86,6 +85,11 @@ contract Sentence {
         // add tag
         ResultList[_id][_choice]++;
         TagLogList[_id].choice[msg.sender] = _choice;
+        SentenceList[_id].numOfAns += 1;
+        // check if complete
+        if (SentenceList[_id].numOfAns == SentenceList[_id].numRequired) {
+           SentenceList[_id].completed = true;
+        }
         // todo
         emit AddTag(msg.sender, _id, _choice);
 
@@ -94,7 +98,7 @@ contract Sentence {
 
     
     // Get the result
-    function getResult(uint _id) public {
+    function getResult(bytes32 _id) public returns (uint[] memory){
         require(msg.sender == SentenceList[_id].requester);
         return ResultList[_id];
     }
